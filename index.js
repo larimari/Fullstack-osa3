@@ -1,4 +1,6 @@
-require('dotenv').config()
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config()
+}
 const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
@@ -11,7 +13,6 @@ app.use(cors())
 app.use(bodyParser.json())
 app.use(morgan('tiny'))
 app.use(express.static('build'))
-
 
 app.get('/api/persons', (request, response) => {
     Person.find({}).then(persons => {
@@ -28,27 +29,28 @@ app.get('/info', (request, response) => {
 
 app.get('/api/persons/:id', (request, response, next) => {
     Person.findById(request.params.id)
-      .then(person => {
-        if (person) {
-          response.json(person.toJSON())
-        } else {
-          response.status(404).end()
-        }
-      })
-      .catch(error => next(error))
-  })
+        .then(person => {
+            if (person) {
+                response.json(person.toJSON())
+            } else {
+                response.status(404).end()
+            }
+        })
+        .catch(error => next(error))
+})
 
-app.delete('/api/persons/:id', (request, response) => {
+app.delete('/api/persons/:id', (request, response, next) => {
     Person.findByIdAndRemove(request.params.id)
-    .then(result => {
-      response.status(204).end()
-    })
+        .then(result => {
+            response.status(204).end()
+        })
+        .catch(error => next(error))
 });
 function getRandomInt(max) {
     return Math.floor(Math.random() * Math.floor(max));
 }
 
-app.post('/api/persons', (request, response) => {
+app.post('/api/persons', (request, response, next) => {
     const body = request.body
     console.log(body)
     const person = new Person({
@@ -59,33 +61,42 @@ app.post('/api/persons', (request, response) => {
         .then(savedPerson => {
             response.json(savedPerson.toJSON())
         })
-
-    /*if (body.name === undefined || body.number === undefined) {
-        return response.status(400).json({
-            error: `name or number is missing`
-        })
-    }
-
-
-    const vanha = numerot.find(henkilo => body.name === henkilo.name)
-
-    console.log('vanha', vanha)
-    if (vanha) {
-        return response.status(400).json({
-            error: `name must be unique`
-        })
-    }
-
-    const tiedot = {
-        name: body.name,
-        number: body.number,
-        id: getRandomInt(9999999),
-    }
-
-    numerot = numerot.concat(tiedot)
-
-    response.json(tiedot)*/
+        .catch(error => next(error))
 })
+
+app.put('/api/persons/:id', (request, response, next) => {
+    const body = request.body
+
+    Person.findById(request.params.id).then((person) => {
+        if (person === null) {
+            throw "Henkilö on jo poistettu listalta";
+        }
+        person.number = body.number
+        person.save().then(() => {
+            response.json(person.toJSON())
+        })
+            .catch(error => next(error))
+    }).catch(error => response.status(400).json({ error }))
+})
+
+
+const errorHandler = (error, req, res, next) => {
+    console.log(error.message)
+
+    if (error.name === 'CastError' && error.kind === 'ObjectId') {
+        return res.status(400).send({ error: 'malformatted id' })
+    } else if (error.name === 'ValidationError') {
+        return res.status(400).json({ error: error.message })
+    }
+    next(error)
+}
+
+app.use(errorHandler)
+
+const unknownEndpoint = (req, res) => {
+    res.status(404).send({ error: 'unknown endpoint' })
+}
+app.use(unknownEndpoint)
 
 const port = process.env.PORT
 app.listen(port)
